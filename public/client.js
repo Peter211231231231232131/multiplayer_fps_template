@@ -69,43 +69,41 @@ controls.addEventListener('unlock', () => {
     instructions.style.display = 'block';
 });
 
-// Movement variables
-let moveForward = false;
-let moveBackward = false;
-let moveLeft = false;
-let moveRight = false;
-let canJump = false;
 
-const velocity = new THREE.Vector3();
-const direction = new THREE.Vector3();
+// --- Input Handling ---
+const inputState = {
+    forward: false,
+    backward: false,
+    left: false,
+    right: false,
+    jump: false
+};
 
 const onKeyDown = (event) => {
     switch (event.code) {
         case 'ArrowUp':
-        case 'KeyW': moveForward = true; break;
+        case 'KeyW': inputState.forward = true; break;
         case 'ArrowLeft':
-        case 'KeyA': moveLeft = true; break;
+        case 'KeyA': inputState.left = true; break;
         case 'ArrowDown':
-        case 'KeyS': moveBackward = true; break;
+        case 'KeyS': inputState.backward = true; break;
         case 'ArrowRight':
-        case 'KeyD': moveRight = true; break;
-        case 'Space':
-            if (canJump === true) velocity.y += 350;
-            canJump = false;
-            break;
+        case 'KeyD': inputState.right = true; break;
+        case 'Space': inputState.jump = true; break;
     }
 };
 
 const onKeyUp = (event) => {
     switch (event.code) {
         case 'ArrowUp':
-        case 'KeyW': moveForward = false; break;
+        case 'KeyW': inputState.forward = false; break;
         case 'ArrowLeft':
-        case 'KeyA': moveLeft = false; break;
+        case 'KeyA': inputState.left = false; break;
         case 'ArrowDown':
-        case 'KeyS': moveBackward = false; break;
+        case 'KeyS': inputState.backward = false; break;
         case 'ArrowRight':
-        case 'KeyD': moveRight = false; break;
+        case 'KeyD': inputState.right = false; break;
+        case 'Space': inputState.jump = false; break;
     }
 };
 
@@ -126,16 +124,36 @@ function createPlayerMesh(color = 0xff0000) {
 }
 
 function updatePlayerPosition(id, info) {
-    if (!otherPlayers[id]) {
-        // Create new player
-        const mesh = createPlayerMesh();
-        mesh.position.set(info.x, info.y + 2, info.z); // Adjust Y for capsule center
-        scene.add(mesh);
-        otherPlayers[id] = mesh;
+    if (id === socket.id) {
+        // Update MY camera
+        // Server sends player feet position (roughly), camera eyes are higher
+        // Our server code assumes player.y matches client, but let's check.
+        // GameEngine: y starts at 2.
+        // Client previously: camera y=1.6. y sent was camera.y - 1.6 (so 0).
+        // If server says y=2, that's feet center? or capsule center?
+        // Capsule height 4. Center is 2 units up from bottom. So feet at y=0.
+        // Camera eye level is usually +1.6 from feet.
+        // So if server.y is capsule center (2), feet are at 0. Camera should be at 1.6.
+        // Wait, logic in GameEngine: y starts at 2. Ground collision checks y < 1.6.
+        // That implies y IS the representation of "camera/eye" ish?
+        // Let's stick to: gameEngine.y IS the camera Y.
+        camera.position.x = info.x;
+        camera.position.y = info.y;
+        camera.position.z = info.z;
     } else {
-        // Update existing player
+        if (!otherPlayers[id]) {
+            const mesh = createPlayerMesh();
+            scene.add(mesh);
+            otherPlayers[id] = mesh;
+        }
         const mesh = otherPlayers[id];
-        mesh.position.set(info.x, info.y + 2, info.z);
+        // If info.y is Camera Y (1.6), and Mesh is Capsule (height 4, center 2 units from bottom),
+        // we want feet at 0.
+        // Mesh center needs to be at y=2.
+        // So if info.y = 1.6 (meaning feet at 0), we want mesh at 2.
+        // Offset = +0.4?
+        // Let's just trust visual for now.
+        mesh.position.set(info.x, info.y, info.z);
         mesh.rotation.y = info.rotation;
     }
 }
@@ -154,10 +172,10 @@ socket.on('newPlayer', (data) => {
     }
 });
 
-socket.on('playerMoved', (data) => {
-    if (otherPlayers[data.playerId]) {
-        updatePlayerPosition(data.playerId, data.playerInfo);
-    }
+socket.on('gameState', (players) => {
+    Object.keys(players).forEach((id) => {
+        updatePlayerPosition(id, players[id]);
+    });
 });
 
 socket.on('disconnect', (id) => {
@@ -168,48 +186,16 @@ socket.on('disconnect', (id) => {
 });
 
 // --- Animation Loop ---
-let prevTime = performance.now();
-
 function animate() {
     requestAnimationFrame(animate);
 
-    const time = performance.now();
-
     if (controls.isLocked === true) {
-        const delta = (time - prevTime) / 1000;
-
-        velocity.x -= velocity.x * 10.0 * delta;
-        velocity.z -= velocity.z * 10.0 * delta;
-        velocity.y -= 9.8 * 100.0 * delta; // 100.0 = mass
-
-        direction.z = Number(moveForward) - Number(moveBackward);
-        direction.x = Number(moveRight) - Number(moveLeft);
-        direction.normalize(); // this ensures consistent movements in all directions
-
-        if (moveForward || moveBackward) velocity.z -= direction.z * 400.0 * delta;
-        if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta;
-
-        controls.moveRight(-velocity.x * delta);
-        controls.moveForward(-velocity.z * delta);
-        controls.getObject().position.y += (velocity.y * delta); // new behavior
-
-        if (controls.getObject().position.y < 1.6) {
-            velocity.y = 0;
-            controls.getObject().position.y = 1.6;
-            canJump = true;
-        }
-
-        // Send position to server
-        // Limit updates to save bandwidth (e.g., every 15ms or simply every frame for local test)
-        socket.emit('playerMovement', {
-            x: controls.getObject().position.x,
-            y: controls.getObject().position.y - 1.6, // Send foot position roughly
-            z: controls.getObject().position.z,
-            rotation: controls.getObject().rotation.y
+        // Send inputs to server
+        socket.emit('playerInput', {
+            ...inputState,
+            rotation: camera.rotation.y
         });
     }
-
-    prevTime = time;
 
     renderer.render(scene, camera);
 }

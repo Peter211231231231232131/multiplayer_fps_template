@@ -10,48 +10,40 @@ app.use(express.static('public'));
 app.use('/build/', express.static(path.join(__dirname, 'node_modules/three/build')));
 app.use('/jsm/', express.static(path.join(__dirname, 'node_modules/three/examples/jsm')));
 
-const players = {};
+const GameEngine = require('./GameEngine');
+const gameEngine = new GameEngine();
 
 io.on('connection', (socket) => {
   console.log('a user connected: ' + socket.id);
 
-  players[socket.id] = {
-    x: 0,
-    y: 1, // Start slightly above ground
-    z: 0,
-    rotation: 0
-  };
+  gameEngine.addPlayer(socket.id);
 
   // Send the current player list to the new player
-  socket.emit('currentPlayers', players);
+  socket.emit('currentPlayers', gameEngine.getState());
 
   // Notify other players about the new player
   socket.broadcast.emit('newPlayer', {
     playerId: socket.id,
-    playerInfo: players[socket.id]
+    playerInfo: gameEngine.getState()[socket.id]
   });
 
   socket.on('disconnect', () => {
     console.log('user disconnected: ' + socket.id);
-    delete players[socket.id];
+    gameEngine.removePlayer(socket.id);
     io.emit('disconnect', socket.id);
   });
 
-  socket.on('playerMovement', (movementData) => {
-    if (players[socket.id]) {
-      players[socket.id].x = movementData.x;
-      players[socket.id].y = movementData.y;
-      players[socket.id].z = movementData.z;
-      players[socket.id].rotation = movementData.rotation;
-
-      // Emit the update to all other players
-      socket.broadcast.emit('playerMoved', {
-        playerId: socket.id,
-        playerInfo: players[socket.id]
-      });
-    }
+  socket.on('playerInput', (inputData) => {
+    gameEngine.handleInput(socket.id, inputData);
   });
 });
+
+// Server Loop
+const TICK_RATE = 60;
+setInterval(() => {
+  gameEngine.update(1 / TICK_RATE);
+  io.emit('gameState', gameEngine.getState());
+}, 1000 / TICK_RATE);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
