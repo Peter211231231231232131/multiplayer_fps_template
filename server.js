@@ -20,6 +20,7 @@ io.on('connection', (socket) => {
 
   // Send the current player list to the new player
   socket.emit('currentPlayers', gameEngine.getState());
+  socket.emit('mapData', gameEngine.getMap());
 
   // Notify other players about the new player
   socket.broadcast.emit('newPlayer', {
@@ -41,9 +42,22 @@ io.on('connection', (socket) => {
 // Server Loop
 const TICK_RATE = 60;
 setInterval(() => {
-  gameEngine.update(1 / TICK_RATE);
-  io.emit('gameState', gameEngine.getState());
+  try {
+    gameEngine.update(1 / TICK_RATE);
+    io.emit('gameState', gameEngine.getState());
+  } catch (error) {
+    console.error("Game Loop Error:", error);
+  }
 }, 1000 / TICK_RATE);
+
+// Global Error Handlers to prevent crash
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {

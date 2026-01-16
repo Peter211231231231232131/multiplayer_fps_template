@@ -38,19 +38,20 @@ floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-// Add some random boxes for reference
-const boxGeometry = new THREE.BoxGeometry(5, 5, 5);
-const boxMaterial = new THREE.MeshLambertMaterial({ color: 0xffaa00 });
+// Listen for map data
+socket.on('mapData', (obstacles) => {
+    const boxGeometry = new THREE.BoxGeometry(1, 1, 1); // Unit box
+    const boxMaterial = new THREE.MeshLambertMaterial({ color: 0xffaa00 });
 
-for (let i = 0; i < 20; i++) {
-    const box = new THREE.Mesh(boxGeometry, boxMaterial);
-    box.position.x = (Math.random() - 0.5) * 100;
-    box.position.y = 2.5;
-    box.position.z = (Math.random() - 0.5) * 100;
-    box.castShadow = true;
-    box.receiveShadow = true;
-    scene.add(box);
-}
+    obstacles.forEach(obs => {
+        const box = new THREE.Mesh(boxGeometry, boxMaterial);
+        box.position.set(obs.x, obs.y, obs.z);
+        box.scale.set(obs.width, obs.height, obs.depth);
+        box.castShadow = true;
+        box.receiveShadow = true;
+        scene.add(box);
+    });
+});
 
 // --- Player Controls ---
 const controls = new PointerLockControls(camera, document.body);
