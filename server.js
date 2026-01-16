@@ -20,6 +20,7 @@ io.on('connection', (socket) => {
 
   // Send the current player list to the new player
   socket.emit('currentPlayers', gameEngine.getState());
+  socket.emit('mapData', gameEngine.getMap());
 
   // Notify other players about the new player
   socket.broadcast.emit('newPlayer', {
