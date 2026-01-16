@@ -82,14 +82,14 @@ class GameEngine {
 
             const velocity = physics.velocity;
 
-            // Damping
+            // Damping (Drag)
             velocity.x -= velocity.x * this.damping * delta;
             velocity.z -= velocity.z * this.damping * delta;
             velocity.y -= this.gravity * this.mass * delta;
 
             // Direction calculation (Relative to Camera Rotation)
-            // Forward/Back uses Z, Left/Right uses X
-            physics.direction.z = Number(inputs.forward || 0) - Number(inputs.backward || 0);
+            // Standard ThreeJS: -Z is Forward, +X is Right
+            physics.direction.z = Number(inputs.backward || 0) - Number(inputs.forward || 0);
             physics.direction.x = Number(inputs.right || 0) - Number(inputs.left || 0);
             physics.direction.normalize();
 
@@ -98,10 +98,11 @@ class GameEngine {
                 physics.direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation);
             }
 
-            // Movement force
+            // Movement force (Acceleration)
             if (inputs.forward || inputs.backward || inputs.left || inputs.right) {
-                velocity.x -= physics.direction.x * this.moveSpeed * delta;
-                velocity.z -= physics.direction.z * this.moveSpeed * delta;
+                // velocity += direction * speed * delta
+                velocity.x += physics.direction.x * this.moveSpeed * delta;
+                velocity.z += physics.direction.z * this.moveSpeed * delta;
             }
 
             // Jump
@@ -115,14 +116,14 @@ class GameEngine {
             const oldZ = player.z;
 
             // Try X movement
-            player.x -= velocity.x * delta;
+            player.x += velocity.x * delta;
             if (this.checkCollision(player, player.x, oldZ)) {
                 player.x = oldX; // Revert X
                 velocity.x = 0;
             }
 
             // Try Z movement
-            player.z -= velocity.z * delta;
+            player.z += velocity.z * delta;
             if (this.checkCollision(player, player.x, player.z)) {
                 player.z = oldZ; // Revert Z
                 velocity.z = 0;
